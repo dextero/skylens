@@ -75,12 +75,42 @@ namespace skylens {
   /// LensingLayer class.
   class LensingLayer : public Layer {
   public:
+    struct Parameters {
+        double sidelength;
+        double z_lens;
+        double z_source;
+        double omega;
+        double lambda;
+        double h;
+        bool rescale_lens;
+
+        double z;
+        const shapelens::Point<double>* center;
+        Image<float> deflection_realpart;
+        Image<float> deflection_imagpart;
+
+        Parameters():
+            sidelength(0),
+            z_lens(0),
+            z_source(0),
+            omega(0),
+            lambda(0),
+            h(0),
+            rescale_lens(false),
+            z(0),
+            center(NULL)
+        {}
+    };
+
+    void init(const Parameters& parameters);
+
     /// Constructor from a deflection angle FITS file.
     /// The units of angles are radians, compute for the lens at redshift
     /// \p ZLENS and sources at redshift \p ZSOURCE; \p SIDEL is the 
     /// horizontal size of the lens plane in Mpc/h.\n
     /// \b CAUTION: These parameters need to be set in the FITS header.
     LensingLayer(double z, std::string deflection_file, const shapelens::Point<double>* center = NULL);
+    LensingLayer(const Parameters& parameters);
     /// Get flux at position \p P from the Layer.
     /// If \p z is set, only the source layer at the specified redshift 
     /// will contribute flux, while transformation layers act normally.

@@ -10,13 +10,8 @@
 using namespace skylens;
 using std::complex;
 
-LensingLayer::LensingLayer(double z_, std::string angle_file, const shapelens::Point<double>* center) :
-  // automatically creates a single instance of LayerStack
-  ls(SingleLayerStack::getInstance()),
-  li(SingleLensingInformation::getInstance()),
-  cosmo(SingleCosmology::getInstance())
-{
-  Layer::z = z_;
+void LensingLayer::init(const Parameters& params) {
+  Layer::z = params.z;
   Layer::transparent = false;
   me = ls.insert(std::pair<double,Layer*>(z,this));
 
@@ -27,60 +22,40 @@ LensingLayer::LensingLayer(double z_, std::string angle_file, const shapelens::P
   // compute c/H0: units of D
   li.c_H0 = cosmo.getc()/cosmo.getH0()*cosmo.h100/cosmo.getMpc();  
   }
-
-  // open file with two real-valued images of first and second component
-  fitsfile* fptr = shapelens::FITS::openFile(angle_file);
-  // read in lens parameters
-  double sidelength, z_lens, z_source, h, omega, lambda;
-  shapelens::FITS::readKeyword(fptr,"SIDEL",sidelength);
-  shapelens::FITS::readKeyword(fptr,"ZLENS",z_lens);
-  shapelens::FITS::readKeyword(fptr,"ZSOURCE",z_source);
-  shapelens::FITS::readKeyword(fptr,"OMEGA",omega);
-  shapelens::FITS::readKeyword(fptr,"LAMBDA",lambda);
-  shapelens::FITS::readKeyword(fptr,"H",h);
   // compute rescaling factor of deflection angle
   // in the cosmology from the FITS file
-  Cosmology cosmo_l(omega,lambda,h);
+  Cosmology cosmo_l(params.omega, params.lambda, params.h);
   double Dl, Dls, Ds, c_H0;
   // D in units [c/H0] = [cm] -> [Mpc/h]
-  c_H0 = cosmo_l.getc()/cosmo_l.getH0()*h/cosmo_l.getMpc();
-  Dl = cosmo_l.Dang(z_lens)*c_H0;
-  Ds = cosmo_l.Dang(z_source)*c_H0;
-  Dls = cosmo_l.Dang(z_source,z_lens)*c_H0;
+  c_H0 = cosmo_l.getc() / cosmo_l.getH0() * params.h / cosmo_l.getMpc();
+  Dl = cosmo_l.Dang(params.z_lens)*c_H0;
+  Ds = cosmo_l.Dang(params.z_source)*c_H0;
+  Dls = cosmo_l.Dang(params.z_source, params.z_lens)*c_H0;
   // take out lensing efficiency factor (which is reinserted in getFlux())
   // and convert to arcsec
   scale0 = Ds/Dls * 180/M_PI * 3600;
-  
+  if (params.rescale_lens)
+      scale0 *= params.sidelength/Dl;
+
   // Massimo's convention for deflection angles contains 
   // rescaling factor of sidelength/Dl
   // Do we need to apply it: Yes if keyword LENSRESC is set
   bool lensresc;
-  try {
-    shapelens::FITS::readKeyword(fptr,"LENSRESC",lensresc);
-    if (lensresc)
-      scale0 *= sidelength/Dl;
-  } catch (std::exception) {}
-  
-  // read in complex deflection angle field
-  Image<float> a1;
-  shapelens::FITS::readImage(fptr, a1);
-  a.resize(a1.size());
-  a.grid = a1.grid;
-  a.realPart() = a1;
-  shapelens::FITS::moveToExtension(fptr, 2);
-  shapelens::FITS::readImage(fptr, a1);
-  a.imagPart() = a1;
+  a.resize(params.deflection_realpart.size());
+  a.grid = params.deflection_realpart.grid;
+  a.realPart() = params.deflection_realpart;
+  a.imagPart() = params.deflection_imagpart;
 
   // compute angular rescaling factor: 
   // arcsec -> pixel position in angle map
   // if the lens needs to be moved, we must set it here!
-  theta0 = (sidelength/Dl)*(180/M_PI)*3600/a.grid.getSize(0);
+  theta0 = (params.sidelength/Dl)*(180/M_PI)*3600/a.grid.getSize(0);
   shapelens::ScalarTransformation S(theta0);
 
   shapelens::Point<double> center_image(-0.5*a.grid.getSize(0),-0.5*a.grid.getSize(1));
   shapelens::ShiftTransformation Z(center_image);
-  if (center != NULL) {
-    shapelens::ShiftTransformation ZF(*center);
+  if (params.center != NULL) {
+    shapelens::ShiftTransformation ZF(*params.center);
     S *= ZF;
     Z *= S;
     a.grid.setWCS(Z);
@@ -88,7 +63,48 @@ LensingLayer::LensingLayer(double z_, std::string angle_file, const shapelens::P
     Z *= S;
     a.grid.setWCS(Z);
   }
+}
+
+LensingLayer::LensingLayer(const Parameters& params):
+  ls(SingleLayerStack::getInstance()),
+  li(SingleLensingInformation::getInstance()),
+  cosmo(SingleCosmology::getInstance())
+{
+  init(params);
+}
+
+LensingLayer::LensingLayer(double z_, std::string angle_file, const shapelens::Point<double>* center) :
+  // automatically creates a single instance of LayerStack
+  ls(SingleLayerStack::getInstance()),
+  li(SingleLensingInformation::getInstance()),
+  cosmo(SingleCosmology::getInstance())
+{
+  Parameters params;
+  params.z = z_;
+  params.center = center;
+
+  // open file with two real-valued images of first and second component
+  fitsfile* fptr = shapelens::FITS::openFile(angle_file);
+  // read in lens parameters
+  shapelens::FITS::readKeyword(fptr, "SIDEL",   params.sidelength);
+  shapelens::FITS::readKeyword(fptr, "ZLENS",   params.z_lens);
+  shapelens::FITS::readKeyword(fptr, "ZSOURCE", params.z_source);
+  shapelens::FITS::readKeyword(fptr, "OMEGA",   params.omega);
+  shapelens::FITS::readKeyword(fptr, "LAMBDA",  params.lambda);
+  shapelens::FITS::readKeyword(fptr, "H",       params.h);
+
+  // read in complex deflection angle field
+  shapelens::FITS::readImage(fptr, params.deflection_realpart);
+  shapelens::FITS::moveToExtension(fptr, 2);
+  shapelens::FITS::readImage(fptr, params.deflection_imagpart);
+
+  try {
+    shapelens::FITS::readKeyword(fptr, "LENSRESC", params.rescale_lens);
+  } catch (std::exception) {}
+
   shapelens::FITS::closeFile(fptr);
+
+  init(params);
 }
 
 // iter points to current lensing layer
