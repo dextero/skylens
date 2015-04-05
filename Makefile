@@ -31,7 +31,7 @@ GITREV = $(shell git describe --always)
 
 # compilation flags
 CC = g++
-CFLAGS = -ansi $(SPECIAL_FLAGS) -DGITREV=$(GITREV)
+CFLAGS = -ansi $(SPECIAL_FLAGS) -DGITREV=$(GITREV) -fPIC
 ifneq ($(UNAME),Linux)
 	CFLAGS += -bind_at_load
 endif
