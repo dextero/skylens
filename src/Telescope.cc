@@ -15,7 +15,8 @@ Telescope::Telescope() : name("Dummy") , bandname("Dummy") {
 }
 
 Telescope::Telescope(std::string configfile, std::string filterfile) {
-  std::string datapath = std::string(getenv("SKYLENSDATAPATH"));
+  const char *const SKYLENS_DATA_PATH = getenv("SKYLENSDATAPATH");
+  std::string datapath = SKYLENS_DATA_PATH ? SKYLENS_DATA_PATH : ".";
   // test if filter file is valid
   std::ifstream ifs;
   test_open(ifs,datapath,filterfile);
